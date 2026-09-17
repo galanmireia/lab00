@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, claude/mobile-executables-vit3r1]
     paths:
       - 'study_reminder_app/**'
       - '.github/workflows/build-apk.yml'
