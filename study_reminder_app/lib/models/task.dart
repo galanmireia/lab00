@@ -21,6 +21,11 @@ class Task {
   bool active;
   DateTime? lastCompletedAt;
 
+  /// Optional code the person enters to confirm the task is actually done.
+  /// It only gates the "mark as completed" action — it never affects
+  /// whether the reminder notification itself can be dismissed.
+  final String? confirmationCode;
+
   Task({
     required this.id,
     required this.title,
@@ -28,6 +33,7 @@ class Task {
     required this.createdAt,
     this.active = true,
     this.lastCompletedAt,
+    this.confirmationCode,
   });
 
   bool get completedToday {
@@ -44,6 +50,7 @@ class Task {
         'createdAt': createdAt.toIso8601String(),
         'active': active,
         'lastCompletedAt': lastCompletedAt?.toIso8601String(),
+        'confirmationCode': confirmationCode,
       };
 
   factory Task.fromJson(Map<String, dynamic> json) => Task(
@@ -55,5 +62,6 @@ class Task {
         lastCompletedAt: json['lastCompletedAt'] != null
             ? DateTime.parse(json['lastCompletedAt'] as String)
             : null,
+        confirmationCode: json['confirmationCode'] as String?,
       );
 }

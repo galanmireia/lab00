@@ -41,16 +41,89 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _persistTasks() => _storage.saveTasks(_tasks);
   Future<void> _persistStats() => _storage.saveStats(_stats);
 
-  Future<void> _addTask(String title, ReminderFrequency frequency) async {
+  Future<void> _addTask(
+    String title,
+    ReminderFrequency frequency,
+    String? confirmationCode,
+  ) async {
     final task = Task(
       id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
       title: title,
       frequency: frequency,
       createdAt: DateTime.now(),
+      confirmationCode:
+          (confirmationCode != null && confirmationCode.isNotEmpty)
+              ? confirmationCode
+              : null,
     );
     await _notifications.scheduleReminder(task);
     setState(() => _tasks = [..._tasks, task]);
     await _persistTasks();
+  }
+
+  /// Entry point for the "mark as completed" button. If the task has a
+  /// confirmation code, it's asked here; the reminder notification itself
+  /// is never affected by this and can always be dismissed on its own.
+  Future<void> _onCompletePressed(Task task) async {
+    final code = task.confirmationCode;
+    if (code == null || code.isEmpty) {
+      await _completeTask(task);
+      return;
+    }
+
+    final confirmed = await _askConfirmationCode(code);
+    if (confirmed) {
+      await _completeTask(task);
+    }
+  }
+
+  Future<bool> _askConfirmationCode(String expectedCode) async {
+    final controller = TextEditingController();
+    String? error;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Confirmar tarea'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Introduce el código para confirmar que la tarea '
+                  'está hecha.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Código',
+                  errorText: error,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text == expectedCode) {
+                  Navigator.pop(context, true);
+                } else {
+                  setDialogState(() => error = 'Código incorrecto');
+                }
+              },
+              child: const Text('Confirmar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return confirmed ?? false;
   }
 
   Future<void> _completeTask(Task task) async {
@@ -78,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _showAddTaskDialog() async {
     final controller = TextEditingController();
+    final codeController = TextEditingController();
     ReminderFrequency frequency = ReminderFrequency.daily;
 
     final result = await showDialog<bool>(
@@ -111,6 +185,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   }
                 },
               ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: codeController,
+                decoration: const InputDecoration(
+                  labelText: 'Código de confirmación (opcional)',
+                  helperText: 'Se pedirá solo al marcar la tarea como '
+                      'completada. El aviso siempre se puede cerrar.',
+                  helperMaxLines: 2,
+                ),
+              ),
             ],
           ),
           actions: [
@@ -130,7 +214,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (result == true && controller.text.trim().isNotEmpty) {
-      await _addTask(controller.text.trim(), frequency);
+      await _addTask(
+        controller.text.trim(),
+        frequency,
+        codeController.text.trim(),
+      );
     }
   }
 
@@ -157,7 +245,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       final task = _tasks[index];
                       return _TaskTile(
                         task: task,
-                        onComplete: () => _completeTask(task),
+                        onComplete: () => _onCompletePressed(task),
                         onReactivate: () => _reactivateTask(task),
                         onDelete: () => _deleteTask(task),
                       );
@@ -263,7 +351,8 @@ class _TaskTile extends StatelessWidget {
         title: Text(task.title),
         subtitle: Text(
           '${task.frequency.label} · '
-          '${task.active ? "Activo" : doneToday ? "Completada hoy" : "Pausado"}',
+          '${task.active ? "Activo" : doneToday ? "Completada hoy" : "Pausado"}'
+          '${task.confirmationCode != null ? " · pide código al completar" : ""}',
         ),
         leading: CircleAvatar(
           backgroundColor: doneToday
