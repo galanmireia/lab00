@@ -45,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String title,
     ReminderFrequency frequency,
     String? confirmationCode,
+    TimeOfDay morningTime,
   ) async {
     final task = Task(
       id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
@@ -55,6 +56,8 @@ class _HomeScreenState extends State<HomeScreen> {
           (confirmationCode != null && confirmationCode.isNotEmpty)
               ? confirmationCode
               : null,
+      morningHour: morningTime.hour,
+      morningMinute: morningTime.minute,
     );
     await _notifications.scheduleReminder(task);
     setState(() => _tasks = [..._tasks, task]);
@@ -153,6 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final controller = TextEditingController();
     final codeController = TextEditingController();
     ReminderFrequency frequency = ReminderFrequency.daily;
+    TimeOfDay morningTime = const TimeOfDay(hour: 8, minute: 0);
 
     final result = await showDialog<bool>(
       context: context,
@@ -185,6 +189,31 @@ class _HomeScreenState extends State<HomeScreen> {
                   }
                 },
               ),
+              if (frequency == ReminderFrequency.morningAndNight) ...[
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Hora de mañana'),
+                  subtitle: Text(morningTime.format(context)),
+                  trailing: const Icon(Icons.edit),
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: morningTime,
+                    );
+                    if (picked != null) {
+                      setDialogState(() => morningTime = picked);
+                    }
+                  },
+                ),
+                const Text(
+                  'El aviso de noche es fijo, sobre las 22:00. Ningún '
+                  'sistema móvil permite detectar de forma fiable el '
+                  'desbloqueo real del teléfono en segundo plano, así que '
+                  'ambos avisos usan una hora fija.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 16),
               TextField(
                 controller: codeController,
@@ -218,6 +247,7 @@ class _HomeScreenState extends State<HomeScreen> {
         controller.text.trim(),
         frequency,
         codeController.text.trim(),
+        morningTime,
       );
     }
   }
@@ -342,6 +372,15 @@ class _TaskTile extends StatelessWidget {
     required this.onDelete,
   });
 
+  String _frequencyLabel() {
+    if (task.frequency == ReminderFrequency.morningAndNight) {
+      final morning = TimeOfDay(hour: task.morningHour, minute: task.morningMinute);
+      return '${morning.hour.toString().padLeft(2, '0')}:'
+          '${morning.minute.toString().padLeft(2, '0')} y 22:00';
+    }
+    return task.frequency.label;
+  }
+
   @override
   Widget build(BuildContext context) {
     final doneToday = task.completedToday;
@@ -350,7 +389,7 @@ class _TaskTile extends StatelessWidget {
       child: ListTile(
         title: Text(task.title),
         subtitle: Text(
-          '${task.frequency.label} · '
+          '${_frequencyLabel()} · '
           '${task.active ? "Activo" : doneToday ? "Completada hoy" : "Pausado"}'
           '${task.confirmationCode != null ? " · pide código al completar" : ""}',
         ),

@@ -1,4 +1,4 @@
-enum ReminderFrequency { hourly, daily, weekly }
+enum ReminderFrequency { hourly, daily, weekly, morningAndNight }
 
 extension ReminderFrequencyLabel on ReminderFrequency {
   String get label {
@@ -9,6 +9,8 @@ extension ReminderFrequencyLabel on ReminderFrequency {
         return 'Cada día';
       case ReminderFrequency.weekly:
         return 'Cada semana';
+      case ReminderFrequency.morningAndNight:
+        return 'Mañana y noche';
     }
   }
 }
@@ -26,6 +28,15 @@ class Task {
   /// whether the reminder notification itself can be dismissed.
   final String? confirmationCode;
 
+  /// Only used when [frequency] is [ReminderFrequency.morningAndNight]:
+  /// the hour/minute of the morning reminder. The night reminder is
+  /// fixed at 22:00 on both Android and iOS (both scheduled at a fixed
+  /// clock time — neither platform lets an app detect a real unlock
+  /// event reliably in the background without a persistent, always-on
+  /// service, which this app intentionally avoids).
+  final int morningHour;
+  final int morningMinute;
+
   Task({
     required this.id,
     required this.title,
@@ -34,6 +45,8 @@ class Task {
     this.active = true,
     this.lastCompletedAt,
     this.confirmationCode,
+    this.morningHour = 8,
+    this.morningMinute = 0,
   });
 
   bool get completedToday {
@@ -51,6 +64,8 @@ class Task {
         'active': active,
         'lastCompletedAt': lastCompletedAt?.toIso8601String(),
         'confirmationCode': confirmationCode,
+        'morningHour': morningHour,
+        'morningMinute': morningMinute,
       };
 
   factory Task.fromJson(Map<String, dynamic> json) => Task(
@@ -63,5 +78,7 @@ class Task {
             ? DateTime.parse(json['lastCompletedAt'] as String)
             : null,
         confirmationCode: json['confirmationCode'] as String?,
+        morningHour: json['morningHour'] as int? ?? 8,
+        morningMinute: json['morningMinute'] as int? ?? 0,
       );
 }

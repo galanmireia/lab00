@@ -40,6 +40,14 @@ class NotificationService {
         ?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
+  static const _nightHour = 22;
+  static const _nightMinute = 0;
+
+  /// The night reminder of a [ReminderFrequency.morningAndNight] task uses
+  /// this derived id so it can be scheduled/cancelled independently from
+  /// the morning one.
+  int _nightIdFor(int taskId) => taskId + 1;
+
   Future<void> scheduleReminder(Task task) async {
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -53,29 +61,91 @@ class NotificationService {
       ),
       iOS: DarwinNotificationDetails(),
     );
+    const body =
+        'Recordatorio: tienes pendiente esta tarea. Puedes descartar este aviso.';
+
+    if (task.frequency == ReminderFrequency.morningAndNight) {
+      await _scheduleDailyAt(
+        task.id,
+        task.title,
+        body,
+        details,
+        task.morningHour,
+        task.morningMinute,
+      );
+      await _scheduleDailyAt(
+        _nightIdFor(task.id),
+        task.title,
+        body,
+        details,
+        _nightHour,
+        _nightMinute,
+      );
+      return;
+    }
 
     final repeatInterval = switch (task.frequency) {
       ReminderFrequency.hourly => RepeatInterval.hourly,
       ReminderFrequency.daily => RepeatInterval.daily,
       ReminderFrequency.weekly => RepeatInterval.weekly,
+      ReminderFrequency.morningAndNight =>
+        throw StateError('handled above'),
     };
 
     await _plugin.periodicallyShow(
       task.id,
       task.title,
-      'Recordatorio: tienes pendiente esta tarea. Puedes descartar este aviso.',
+      body,
       repeatInterval,
       details,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
     );
   }
 
-  Future<void> cancelReminder(int taskId) async {
-    await _plugin.cancel(taskId);
+  /// Schedules a notification that repeats every day at [hour]:[minute],
+  /// identically on Android and iOS. Neither platform offers a reliable
+  /// way for a background app to detect a real screen-unlock event
+  /// without an always-on foreground service, so a fixed clock time is
+  /// used on both instead.
+  Future<void> _scheduleDailyAt(
+    int id,
+    String title,
+    String body,
+    NotificationDetails details,
+    int hour,
+    int minute,
+  ) async {
+    await _plugin.zonedSchedule(
+      id,
+      title,
+      body,
+      _nextInstanceOfTime(hour, minute),
+      details,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
   }
 
-  // Kept for completeness in case a future feature needs exact one-off
-  // scheduling (e.g. "remind me once at 6pm").
-  tz.TZDateTime nextInstanceOf(DateTime dateTime) =>
-      tz.TZDateTime.from(dateTime, tz.local);
+  tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
+    if (scheduled.isBefore(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    return scheduled;
+  }
+
+  Future<void> cancelReminder(int taskId) async {
+    await _plugin.cancel(taskId);
+    await _plugin.cancel(_nightIdFor(taskId));
+  }
 }
